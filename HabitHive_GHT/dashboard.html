@@ -1,0 +1,44 @@
+<!-- dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard</title>
+<link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="logo">🌱 Green Habit Tracker</div>
+    <ul class="nav-links">
+      <li><a href="tracker.html">Dashboard</a></li>
+      <li><a href="dashboard.html" class="active">Progress</a></li>
+      <li><a href="badges.html">Badges</a></li>
+      <li><a href="profile.html">Profile</a></li>
+      <li><a href="#" id="logout">Logout</a></li>
+    </ul>
+  </nav>
+
+  <main class="dashboard-container">
+    <h2>Your Environmental Impact</h2>
+
+    <div class="summary-cards">
+      <div class="card"><h3 id="co2Saved">0</h3><p>kg CO₂ Saved</p></div>
+      <div class="card"><h3 id="waterSaved">0</h3><p>Litres Water Saved</p></div>
+      <div class="card"><h3 id="plasticSaved">0</h3><p>kg Plastic Diverted</p></div>
+      <div class="card"><h3 id="streak">0</h3><p>Day Streak</p></div>
+    </div>
+
+    <div class="chart-container">
+      <canvas id="lineChart"></canvas>
+    </div>
+
+    <div class="chart-container">
+      <canvas id="doughnutChart"></canvas>
+    </div>
+  </main>
+
+  <script type="module" src="./scripts/dashboard.js"></script>
+</body>
+</html>

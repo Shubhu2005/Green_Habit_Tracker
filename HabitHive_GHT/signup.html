@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign Up - Green Habit Tracker</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-box">
+      <h2>Join the Movement</h2>
+      <p style="text-align: center; margin-bottom: 2rem; color: var(--text-secondary);">
+        Start tracking your environmental impact today
+      </p>
+      
+      <input type="text" id="name" placeholder="Full Name" required />
+      <input type="email" id="email" placeholder="Email Address" required />
+      <div class="password-container" style="position: relative; width: 100%;">
+        <input type="password" id="password" placeholder="Create Password" required />
+        <span id="togglePassword" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer;">
+          👁️
+        </span>
+      </div>
+      
+      <button onclick="signUp()">Create Account</button>
+      
+      <p>Already have an account? <a href="login.html">Sign in here</a></p>
+      <p style="margin-top: 1rem;"><a href="index.html">← Back to Home</a></p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { auth, db } from './firebase-config.js';
+    import {
+      createUserWithEmailAndPassword,
+      updateProfile
+    } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-auth.js";
+
+    import {
+      setDoc,
+      doc
+    } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+
+    window.signUp = async function () {
+      const name = document.getElementById("name").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value.trim();
+
+      if (!name || !email || !password) {
+        alert("Please fill in all fields.");
+        return;
+      }
+
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        // Update display name
+        await updateProfile(user, { displayName: name });
+
+        // Create Firestore user document
+        const userDocRef = doc(db, "users", user.uid);
+        await setDoc(userDocRef, {
+          name: name,
+          email: email,
+          badges: {
+            firstLog: false,
+            threeDays: false,
+            sevenDays: false,
+            transportMaster: false,
+            habitMaster: false,
+            planetSaver: false
+          },
+          totalImpact: {
+            co2Saved: 0,
+            waterSaved: 0,
+            plasticSaved: 0,
+            wasteReduced: 0,
+            currentStreak: 0
+          }
+        });
+
+        // Redirect directly without showing success alert
+        window.location.href = "tracker.html";
+
+      } catch (error) {
+        console.error(error);
+        
+        // Provide user-friendly error messages based on error code
+        let errorMessage = "An error occurred during signup. Please try again.";
+        
+        switch(error.code) {
+          case 'auth/email-already-in-use':
+            errorMessage = "This email address is already in use. Please use a different email or try logging in.";
+            break;
+          case 'auth/invalid-email':
+            errorMessage = "The email address is not valid. Please enter a valid email.";
+            break;
+          case 'auth/operation-not-allowed':
+            errorMessage = "Email/password accounts are not enabled. Please contact support.";
+            break;
+          case 'auth/weak-password':
+            errorMessage = "The password is too weak. Please use a stronger password.";
+            break;
+          case 'auth/network-request-failed':
+            errorMessage = "Network error. Please check your internet connection.";
+            break;
+        }
+        
+        alert(errorMessage);
+      }
+    };
+
+    // Handle Enter key
+    document.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        signUp();
+      }
+    });
+
+    // Toggle password visibility
+    document.getElementById('togglePassword').addEventListener('click', function() {
+      const passwordInput = document.getElementById('password');
+      if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        this.textContent = '🔒';
+      } else {
+        passwordInput.type = 'password';
+        this.textContent = '👁️';
+      }
+    });
+  </script>
+</body>
+</html>

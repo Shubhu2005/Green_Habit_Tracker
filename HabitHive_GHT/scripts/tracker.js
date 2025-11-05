@@ -1,0 +1,620 @@
+// scripts/tracker.js
+import { auth, db } from '../firebase-config.js';
+import {
+  onAuthStateChanged,
+  signOut
+} from "https://www.gstatic.com/firebasejs/10.5.0/firebase-auth.js";
+import {
+  doc, setDoc, getDoc, updateDoc
+} from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+
+onAuthStateChanged(auth, (user) => {
+  if (!user) {
+    // Not logged in, redirect to login page
+    window.location.href = "index.html";
+  }
+});
+
+// Habit list
+const habits = [
+  { id: "publicTransport", label: "Used public transport", unit: "CO₂", value: 1.5 },
+  { id: "reusableBottle", label: "Used reusable water bottle", unit: "plastic", value: 0.2 },
+  { id: "recycledWaste", label: "Recycled waste properly", unit: "waste", value: 0.5 },
+  { id: "walked", label: "Walked instead of driving", unit: "CO₂", value: 2.1 },
+  { id: "ledLights", label: "Used LED lights only", unit: "CO₂", value: 0.8 },
+  { id: "plantMeal", label: "Ate plant-based meal", unit: "CO₂", value: 1.2 },
+  { id: "noPlastic", label: "Avoided single-use plastic", unit: "plastic", value: 0.3 },
+  { id: "savedWater", label: "Conserved water", unit: "water", value: 15 },
+  { id: "bike", label: "Used bike for transport", unit: "CO₂", value: 3.2 },
+  { id: "compost", label: "Composted organic waste", unit: "waste", value: 0.7 },
+  { id: "renewable", label: "Used renewable energy", unit: "CO₂", value: 2.5 },
+  { id: "localProduce", label: "Bought local produce", unit: "CO₂", value: 0.9 }
+];
+
+// Inject current date and greeting
+function displayGreeting(user) {
+  const greeting = document.getElementById('greetingBox');
+  const today = new Date().toDateString();
+  greeting.innerHTML = `
+    <h2>Hello ${user.displayName || user.email}!</h2>
+    <p>Ready to save the planet today? 🌍</p>
+    <p><strong>Today's Date:</strong> ${today}</p>
+  `;
+}
+
+// Generate the habit checkboxes
+function renderHabits() {
+  const form = document.getElementById("habitForm");
+  habits.forEach(habit => {
+    const habitBox = document.createElement("div");
+    habitBox.className = "habit-box";
+    habitBox.innerHTML = `
+      <input type="checkbox" id="${habit.id}" />
+      <label for="${habit.id}">
+        <strong>${habit.label}</strong><br/>
+        <small>Saves ${habit.value} ${habit.unit}</small>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="${habit.id}-toggle">
+        <span class="slider"></span>
+      </label>
+    `;
+    form.appendChild(habitBox);
+  });
+}
+
+// Badge checking logic
+async function checkAndAwardBadges(user, habitData) {
+  // Debug log to see what data we're receiving
+  console.log("Checking badges with data:", habitData);
+  try {
+    const userDocRef = doc(db, "users", user.uid);
+    const userSnap = await getDoc(userDocRef);
+    
+    if (!userSnap.exists()) {
+      console.log("User document does not exist");
+      // Create user document if it doesn't exist
+      await setDoc(userDocRef, { badges: {} });
+      const userSnap = await getDoc(userDocRef);
+    }
+    
+    const userData = userSnap.data();
+    const currentBadges = userData.badges || {};
+    const updates = {};
+    
+    // Debug logs
+    console.log("Habit Data:", habitData);
+    console.log("Current Badges:", currentBadges);
+    
+    // For first log badge, we need at least one habit checked
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Check if any habits were selected today
+    let hasTodayHabit = false;
+    if (habitData[today]) {
+      // With the new data structure, today's data is an array of submissions
+      const todayEntries = habitData[today];
+      
+      if (Array.isArray(todayEntries)) {
+        // New format - array of submissions
+        for (const entry of todayEntries) {
+          const habitEntries = entry.habits;
+          for (const habitId in habitEntries) {
+            if (habitEntries[habitId] === true) {
+              hasTodayHabit = true;
+              console.log(`Found selected habit today: ${habitId}`);
+              break;
+            }
+          }
+          if (hasTodayHabit) break;
+        }
+      } else {
+        // Old format - direct habit mapping
+        for (const habit in habitData[today]) {
+          if (habitData[today][habit] === true) {
+            hasTodayHabit = true;
+            console.log(`Found selected habit today: ${habit}`);
+            break;
+          }
+        }
+      }
+    }
+    
+    // First Log badge - award if any habit was selected today
+    if (hasTodayHabit && !currentBadges.firstLog) {
+      updates["badges.firstLog"] = true;
+      console.log("🎉 First Log badge unlocked!");
+    }
+    
+    // If first log badge still not unlocked, check all days
+    if (!updates["badges.firstLog"] && !currentBadges.firstLog) {
+      // Check if any habits were selected for any day
+      let hasAnyHabitSelected = false;
+      for (const day in habitData) {
+        const dayData = habitData[day];
+        
+        if (Array.isArray(dayData)) {
+          // New format - array of submissions
+          for (const entry of dayData) {
+            const habitEntries = entry.habits;
+            for (const habitId in habitEntries) {
+              if (habitEntries[habitId] === true) {
+                hasAnyHabitSelected = true;
+                console.log(`Found selected habit: ${habitId} on day ${day}`);
+                break;
+              }
+            }
+            if (hasAnyHabitSelected) break;
+          }
+        } else {
+          // Old format - direct habit mapping
+          for (const habit in dayData) {
+            if (dayData[habit] === true) {
+              hasAnyHabitSelected = true;
+              console.log(`Found selected habit: ${habit} on day ${day}`);
+              break;
+            }
+          }
+        }
+        
+        if (hasAnyHabitSelected) break;
+      }
+      
+      if (hasAnyHabitSelected) {
+        updates["badges.firstLog"] = true;
+        console.log("🎉 First Log badge unlocked based on past habits!");
+      }
+    }
+    
+    // Calculate streak
+    const daysWithHabits = [];
+    for (const day in habitData) {
+      const dayData = habitData[day];
+      let hasHabitForDay = false;
+      
+      if (Array.isArray(dayData)) {
+        // New format - array of submissions
+        for (const entry of dayData) {
+          const habitEntries = entry.habits;
+          for (const habitId in habitEntries) {
+            if (habitEntries[habitId] === true) {
+              hasHabitForDay = true;
+              break;
+            }
+          }
+          if (hasHabitForDay) break;
+        }
+      } else {
+        // Old format - direct habit mapping
+        for (const habit in dayData) {
+          if (dayData[habit] === true) {
+            hasHabitForDay = true;
+            break;
+          }
+        }
+      }
+      
+      if (hasHabitForDay) {
+        daysWithHabits.push(day);
+      }
+    }
+    
+    // Sort days in descending order (newest first)
+    daysWithHabits.sort((a, b) => new Date(b) - new Date(a));
+    
+    // Calculate current streak
+    let currentStreak = 0;
+    const currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+    
+    for (let i = 0; i < daysWithHabits.length; i++) {
+       const habitDate = new Date(daysWithHabits[i]);
+       habitDate.setHours(0, 0, 0, 0);
+       
+       if (i === 0) {
+         // First day in streak
+         currentStreak = 1;
+         // If first day is not today or yesterday, streak is just 1
+         const dayDiff = Math.floor((currentDate - habitDate) / (1000 * 60 * 60 * 24));
+         if (dayDiff > 1) {
+           break;
+         }
+       } else {
+         // Check if this day is consecutive with previous day
+         const prevDate = new Date(daysWithHabits[i-1]);
+         prevDate.setHours(0, 0, 0, 0);
+         
+         const dayDiff = Math.floor((prevDate - habitDate) / (1000 * 60 * 60 * 24));
+         if (dayDiff === 1) {
+           // Consecutive day
+           currentStreak++;
+         } else {
+           // Streak broken
+           break;
+         }
+       }
+     }
+    
+    console.log("Current streak:", currentStreak);
+    console.log("Total days with habits:", daysWithHabits.length);
+    
+    // 3-Day Streak badge
+    if (currentStreak >= 3 && !currentBadges.threeDays) {
+      updates["badges.threeDays"] = true;
+      console.log("🔥 3-Day Streak badge unlocked!");
+    }
+    
+    // 7-Day Streak badge
+    if (currentStreak >= 7 && !currentBadges.sevenDays) {
+      updates["badges.sevenDays"] = true;
+      console.log("🏆 7-Day Streak badge unlocked!");
+    }
+    
+    // Habit Master badge (30-day streak)
+    if (currentStreak >= 30 && !currentBadges.habitMaster) {
+      updates["badges.habitMaster"] = true;
+      console.log("🏆 Habit Master badge unlocked!");
+    }
+    
+    // Count public transport uses
+    let publicTransportCount = 0;
+    for (const day in habitData) {
+      const dayData = habitData[day];
+      
+      if (Array.isArray(dayData)) {
+        // New format - array of submissions
+        for (const entry of dayData) {
+          const habitEntries = entry.habits;
+          if (habitEntries.publicTransport === true) {
+            publicTransportCount++;
+          }
+        }
+      } else {
+        // Old format - direct habit mapping
+        if (dayData.publicTransport === true) {
+          publicTransportCount++;
+        }
+      }
+    }
+    
+    // Transport Master badge (20 public transport uses)
+    if (publicTransportCount >= 20 && !currentBadges.transportMaster) {
+      updates["badges.transportMaster"] = true;
+      console.log("🚌 Transport Master badge unlocked!");
+    }
+    
+    // Calculate total CO2 saved
+    let totalCO2Saved = 0;
+    for (const day in habitData) {
+      const dayData = habitData[day];
+      
+      if (Array.isArray(dayData)) {
+        // New format - array of submissions
+        for (const entry of dayData) {
+          const habitEntries = entry.habits;
+          for (const habitId in habitEntries) {
+            if (habitEntries[habitId] === true) {
+              const habitInfo = habits.find(h => h.id === habitId);
+              if (habitInfo && habitInfo.unit === "CO₂") {
+                totalCO2Saved += habitInfo.value;
+              }
+            }
+          }
+        }
+      } else {
+        // Old format - direct habit mapping
+        for (const habit in dayData) {
+          if (dayData[habit] === true) {
+            const habitInfo = habits.find(h => h.id === habit);
+            if (habitInfo && habitInfo.unit === "CO₂") {
+              totalCO2Saved += habitInfo.value;
+            }
+          }
+        }
+      }
+    }
+    
+    // Planet Saver badge (100kg CO2 saved)
+    if (totalCO2Saved >= 100 && !currentBadges.planetSaver) {
+      updates["badges.planetSaver"] = true;
+      console.log("🌍 Planet Saver badge unlocked!");
+    }
+    
+    // Apply updates if any
+    if (Object.keys(updates).length > 0) {
+      await updateDoc(userDocRef, updates);
+      
+      // Show badge notification
+      if (updates["badges.firstLog"]) {
+        showBadgeNotification("First Steps", "🌱", "You've earned your first badge! Visit the Badges page to see it.");
+      }
+      if (updates["badges.threeDays"]) {
+        showBadgeNotification("Week Warrior", "🔥", "You've logged habits for 3 days! Visit the Badges page to see your new badge.");
+      }
+      if (updates["badges.sevenDays"]) {
+        showBadgeNotification("Recycling Hero", "♻️", "You've logged habits for 7 days! Visit the Badges page to see your new badge.");
+      }
+      if (updates["badges.transportMaster"]) {
+        showBadgeNotification("Transport Master", "🚌", "You've used public transport 20 times! Visit the Badges page to see your new badge.");
+      }
+      if (updates["badges.habitMaster"]) {
+        showBadgeNotification("Eco Champion", "🏆", "You've maintained a 30-day streak! Visit the Badges page to see your new badge.");
+      }
+      if (updates["badges.planetSaver"]) {
+        showBadgeNotification("Planet Saver", "🌍", "You've saved 100kg of CO₂! Visit the Badges page to see your new badge.");
+      }
+    }
+    
+  } catch (error) {
+    console.error("Error checking badges:", error);
+    
+    // Provide user-friendly error messages based on error code
+    let errorMessage = "Unable to update your badges. Your habits were saved, but badge progress may not be reflected.";
+    
+    if (error.code && error.code.startsWith('firestore/')) {
+      switch(error.code) {
+        case 'firestore/permission-denied':
+          errorMessage = "You don't have permission to update your badges. Please log out and log back in.";
+          break;
+        case 'firestore/unavailable':
+          errorMessage = "The badge service is currently unavailable. Your habits were saved, but badges may not be updated.";
+          break;
+        case 'firestore/network-request-failed':
+          errorMessage = "Network error while updating badges. Please check your internet connection.";
+          break;
+      }
+    }
+    
+    alert(errorMessage);
+  }
+}
+
+// Show badge notification
+function showBadgeNotification(badgeName, icon, message) {
+  const notification = document.createElement("div");
+  notification.className = "badge-notification";
+  notification.innerHTML = `
+    <div class="badge-notification-content">
+      <div class="badge-icon">${icon}</div>
+      <div class="badge-text">
+        <h3>Badge Unlocked: ${badgeName}</h3>
+        <p>${message}</p>
+      </div>
+      <button class="close-notification">×</button>
+    </div>
+  `;
+  
+  // Add styles
+  const style = document.createElement("style");
+  style.textContent = `
+    .badge-notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: white;
+      border-left: 4px solid var(--primary-green);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      border-radius: 8px;
+      z-index: 1000;
+      max-width: 350px;
+      animation: slideIn 0.3s ease-out;
+    }
+    
+    @keyframes slideIn {
+       from { transform: translateX(100%); opacity: 0; }
+       to { transform: translateX(0); opacity: 1; }
+     }
+     
+     @keyframes slideOut {
+       from { transform: translateX(0); opacity: 1; }
+       to { transform: translateX(100%); opacity: 0; }
+     }
+    
+    .badge-notification-content {
+      display: flex;
+      padding: 15px;
+      align-items: center;
+    }
+    
+    .badge-icon {
+      font-size: 2rem;
+      margin-right: 15px;
+      background: var(--primary-green);
+      color: white;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .badge-text {
+      flex: 1;
+    }
+    
+    .badge-text h3 {
+      margin: 0 0 5px 0;
+      font-size: 1rem;
+    }
+    
+    .badge-text p {
+      margin: 0;
+      font-size: 0.9rem;
+      color: #666;
+    }
+    
+    .close-notification {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: #999;
+      padding: 0;
+      margin-left: 10px;
+    }
+  `;
+  
+  document.head.appendChild(style);
+  document.body.appendChild(notification);
+  
+  // Auto-remove after 5 seconds
+  setTimeout(() => {
+    notification.style.animation = "slideOut 0.3s ease-in forwards";
+    setTimeout(() => {
+      document.body.removeChild(notification);
+    }, 300);
+  }, 5000);
+  
+  // Close button
+  notification.querySelector(".close-notification").addEventListener("click", () => {
+    document.body.removeChild(notification);
+  });
+}
+
+// Badge: Transport Master (20 public transport uses)
+const transportLogs = habitLogs.filter(log => log.habit === "Used public transport");
+if (transportLogs.length >= 20 && !currentBadges.transportMaster) {
+  await updateDoc(userDocRef, {
+    "badges.transportMaster": true
+  });
+  console.log("🚌 Transport Master badge unlocked!");
+}
+
+// Badge: Planet Saver (100kg CO2 saved)
+let totalCO2Saved = 0;
+habitLogs.forEach(log => {
+  const habitInfo = habits.find(h => h.id === log.habit);
+  if (habitInfo && habitInfo.unit === "CO₂") {
+    totalCO2Saved += habitInfo.value;
+  }
+});
+if (totalCO2Saved >= 100 && !currentBadges.planetSaver) {
+  await updateDoc(userDocRef, {
+    "badges.planetSaver": true
+  });
+  console.log("🌍 Planet Saver badge unlocked!");
+}
+
+
+// Submit to Firestore
+async function submitHabits(user) {
+  const today = new Date().toISOString().split('T')[0]; // e.g. 2025-08-07
+  const timestamp = new Date().toISOString(); // Full timestamp for ordering entries
+  const data = {};
+
+  habits.forEach(habit => {
+    const isChecked = document.getElementById(`${habit.id}-toggle`).checked;
+    data[habit.id] = isChecked;
+  });
+
+  // Add timestamp to this submission
+  const submission = {
+    timestamp: timestamp,
+    habits: data
+  };
+
+  try {
+    const userDoc = doc(db, "habits", user.uid);
+    const snapshot = await getDoc(userDoc);
+    const oldData = snapshot.exists() ? snapshot.data() : {};
+    
+    // Define updatedData outside the if/else blocks so it's accessible later
+    let updatedData;
+    
+    // Check if we already have data for today
+    if (oldData[today]) {
+      console.log("Existing data for today:", oldData[today]);
+      
+      // If today's data is not in the new array format yet, convert it
+      let todayEntries = [];
+      
+      if (Array.isArray(oldData[today])) {
+        // Already using the new format (array of submissions)
+        todayEntries = oldData[today];
+      } else {
+        // Convert old format to new format
+        // Create a synthetic timestamp for the old entry (beginning of day)
+        const oldTimestamp = new Date(today + 'T00:00:00.000Z').toISOString();
+        todayEntries = [{
+          timestamp: oldTimestamp,
+          habits: oldData[today]
+        }];
+      }
+      
+      // Add the new submission to today's entries
+      todayEntries.push(submission);
+      console.log("Updated entries for today:", todayEntries);
+      
+      updatedData = {
+        ...oldData,
+        [today]: todayEntries
+      };
+    } else {
+      // No existing data for today, create a new array with this submission
+      updatedData = {
+        ...oldData,
+        [today]: [submission]
+      };
+    }
+    
+    // Save the data to Firestore
+    await setDoc(userDoc, updatedData);
+    
+    // Check for badge awards
+    await checkAndAwardBadges(user, updatedData);
+    
+    alert("Habits submitted successfully! 🌱");
+  } catch (error) {
+    console.error("Error saving habits: ", error);
+    
+    // Provide user-friendly error messages based on error code
+    let errorMessage = "Failed to save your habits. Please try again.";
+    
+    if (error.code && error.code.startsWith('firestore/')) {
+      switch(error.code) {
+        case 'firestore/permission-denied':
+          errorMessage = "You don't have permission to save your habits. Please log out and log back in.";
+          break;
+        case 'firestore/unavailable':
+          errorMessage = "The service is currently unavailable. Please try again later.";
+          break;
+        case 'firestore/network-request-failed':
+          errorMessage = "Network error. Please check your internet connection and try again.";
+          break;
+      }
+    }
+    
+    alert(errorMessage);
+  }
+}
+
+// Event Listeners
+document.getElementById("submitHabits").addEventListener("click", async () => {
+  const user = auth.currentUser;
+  if (user) await submitHabits(user);
+});
+
+document.getElementById("logout").addEventListener("click", () => {
+  // Set a flag in sessionStorage to indicate intentional logout
+  sessionStorage.setItem('intentionalLogout', 'true');
+  signOut(auth).then(() => {
+    window.location.href = "index.html";
+  });
+});
+
+// Check Auth
+onAuthStateChanged(auth, user => {
+  if (user) {
+    displayGreeting(user);
+    renderHabits();
+  } else {
+    // Check if this is an intentional logout
+    if (!sessionStorage.getItem('intentionalLogout')) {
+      alert("Please login to continue.");
+    }
+    // Clear the flag
+    sessionStorage.removeItem('intentionalLogout');
+    window.location.href = "index.html";
+  }
+});

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Badges - Green Habit Tracker</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="logo">🌱 Green Habit Tracker</div>
+    <ul class="nav-links">
+      <li><a href="tracker.html">Dashboard</a></li>
+      <li><a href="dashboard.html">Progress</a></li>
+      <li><a href="badges.html" class="active">Badges</a></li>
+      <li><a href="profile.html">Profile</a></li>
+      <li><a href="#" id="logout">Logout</a></li>
+    </ul>
+  </nav>
+
+  <main class="badges-container">
+    <h2>Your Achievements 🏅</h2>
+    <div id="badgeGrid" class="badge-grid">
+      <!-- Badges will be inserted here -->
+    </div>
+  </main>
+
+  <footer>
+    <p>&copy; 2025 Green Habit Tracker</p>
+  </footer>
+
+  <script type="module">
+    import { auth, db } from './firebase-config.js';
+    import { 
+      onAuthStateChanged,
+      signOut 
+    } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-auth.js";
+    import { 
+      doc, 
+      getDoc 
+    } from "https://www.gstatic.com/firebasejs/10.5.0/firebase-firestore.js";
+
+    const badgeData = [
+      { id: "firstLog", name: "First Steps", description: "Logged your first habit", icon: "🌱", earned: false },
+      { id: "threeDays", name: "Week Warrior", description: "7-day habit streak", icon: "🔥", earned: false },
+      { id: "sevenDays", name: "Recycling Hero", description: "Logged 10 recycling habits", icon: "♻️", earned: false },
+      { id: "transportMaster", name: "Transport Master", description: "Use public transport 20 times", icon: "🚌", earned: false },
+      { id: "habitMaster", name: "Eco Champion", description: "30-day habit streak", icon: "🏆", earned: false },
+      { id: "planetSaver", name: "Planet Saver", description: "Save 100kg CO₂", icon: "🌍", earned: false }
+    ];
+
+    async function loadBadges(user) {
+      const badgeGrid = document.getElementById("badgeGrid");
+      badgeGrid.innerHTML = '';
+
+      try {
+        const userDocRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userDocRef);
+
+        let userBadges = {};
+        if (userSnap.exists()) {
+          const data = userSnap.data();
+          userBadges = data.badges || {};
+        }
+
+        badgeData.forEach(badge => {
+          const isEarned = userBadges[badge.id] === true;
+          
+          const badgeCard = document.createElement("div");
+          badgeCard.classList.add("badge");
+          if (isEarned) badgeCard.classList.add("earned");
+
+          badgeCard.innerHTML = `
+            <div class="badge-icon">${badge.icon}</div>
+            <h3>${badge.name}</h3>
+            <p>${badge.description}</p>
+            <span class="status">${isEarned ? '✓ Earned' : '🔒 Locked'}</span>
+          `;
+
+          badgeGrid.appendChild(badgeCard);
+        });
+
+      } catch (error) {
+        console.error("Error loading badges:", error);
+        
+        // Provide user-friendly error messages based on error code
+        let errorMessage = "Unable to load your badges. Please try again later.";
+        
+        if (error.code && error.code.startsWith('firestore/')) {
+          switch(error.code) {
+            case 'firestore/permission-denied':
+              errorMessage = "You don't have permission to access your badges. Please log out and log back in.";
+              break;
+            case 'firestore/unavailable':
+              errorMessage = "The service is currently unavailable. Please try again later.";
+              break;
+            case 'firestore/not-found':
+              errorMessage = "Your badge data could not be found. Please contact support.";
+              break;
+            case 'firestore/network-request-failed':
+              errorMessage = "Network error. Please check your internet connection and try again.";
+              break;
+          }
+        }
+        
+        badgeGrid.innerHTML = `<p class="error-message">${errorMessage}</p>`;
+      }
+    }
+
+    // Logout functionality
+    document.getElementById("logout").addEventListener("click", () => {
+      // Set a flag in sessionStorage to indicate intentional logout
+      sessionStorage.setItem('intentionalLogout', 'true');
+      signOut(auth).then(() => {
+        window.location.href = "index.html";
+      });
+    });
+
+    // Auth state observer
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        loadBadges(user);
+      } else {
+        window.location.href = "index.html";
+      }
+    });
+  </script>
+</body>
+</html>
