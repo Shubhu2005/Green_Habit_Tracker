@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Habit Tracker</title>
   <link rel="stylesheet" href="css/style.css">
+  <script src="js/alerts.js"></script>
+  <script src="js/animations.js"></script>
 </head>
 <body>
   <nav class="navbar">
@@ -24,19 +26,19 @@
   </nav>
 
   <main class="habit-container">
-    <div class="greeting" id="greetingBox">
+    <div class="greeting fade-in" id="greetingBox">
       <!-- Greeting with date will be injected here -->
     </div>
 
-    <div class="badge-info" style="text-align: center; margin-bottom: 20px; padding: 10px; background-color: #f0f9f0; border-radius: 8px;">
+    <div class="badge-info fade-in" style="text-align: center; margin-bottom: 20px; padding: 10px; background-color: #f0f9f0; border-radius: 8px;">
       <p>🌱 <strong>Earn your first badge!</strong> Check at least one habit below and click "Submit Today's Habits" to unlock your first achievement.</p>
     </div>
 
-    <form id="habitForm" class="habit-grid">
+    <form id="habitForm" class="habit-grid stagger-container">
       <!-- Habit switches will be dynamically injected -->
     </form>
 
-    <button id="submitHabits" class="btn-primary">Submit Today's Habits</button>
+    <button id="submitHabits" class="btn-primary scale-in">Submit Today's Habits</button>
   </main>
 
   <script type="module">
@@ -83,7 +85,7 @@
       
       habits.forEach(habit => {
         const habitBox = document.createElement("div");
-        habitBox.className = "habit-box";
+        habitBox.className = "habit-box stagger-item";
         habitBox.innerHTML = `
           <div class="habit-content">
             <label for="${habit.id}">
@@ -580,6 +582,11 @@
         await checkAndAwardBadges(user, updatedData);
         
         alert("Habits submitted successfully! 🌱");
+        
+        // Add pulse effect to submit button
+        if (window.simpleAnimations) {
+          window.simpleAnimations.addPulse(document.getElementById("submitHabits"));
+        }
         
         // Reset form
         habits.forEach(habit => {
