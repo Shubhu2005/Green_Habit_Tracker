@@ -7,6 +7,21 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <nav class="navbar">
+    <div class="logo">🌱 Green Habit Tracker</div>
+    <button class="hamburger">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+    <ul class="nav-links">
+      <li><a href="index.html" class="active">Home</a></li>
+      <li><a href="tracker.html">Dashboard</a></li>
+      <li><a href="login.html">Login</a></li>
+      <li><a href="signup.html">Sign Up</a></li>
+    </ul>
+  </nav>
+
   <div class="container landing">
     <h1>Track Your Green Impact</h1>
     <p>Small habits, big impact. Start your eco-friendly journey today!</p>
@@ -36,5 +51,26 @@
       </div>
     </div>
   </div>
+
+  <script>
+    // Hamburger menu functionality
+    const hamburger = document.querySelector('.hamburger');
+    const navLinks = document.querySelector('.nav-links');
+    
+    if (hamburger && navLinks) {
+      hamburger.addEventListener('click', () => {
+        navLinks.classList.toggle('active');
+        hamburger.classList.toggle('active');
+      });
+      
+      // Close menu when clicking on a link
+      document.querySelectorAll('.nav-links a').forEach(link => {
+        link.addEventListener('click', () => {
+          navLinks.classList.remove('active');
+          hamburger.classList.remove('active');
+        });
+      });
+    }
+  </script>
 </body>
 </html>
